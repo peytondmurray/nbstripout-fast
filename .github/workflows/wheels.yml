@@ -1,0 +1,118 @@
+# Adapted from https://github.com/Cryptex-github/ril-py
+name: Build Wheels
+
+on: [pull_request, workflow_dispatch]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_wheels:
+    name: >
+      build ${{ matrix.python-version }} on ${{ matrix.platform || matrix.os }}
+      ${{ (matrix.arch) || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+        python-version: ['cp311', 'cp310', 'cp39']
+        include:
+          - os: ubuntu
+            platform: linux
+          - os: windows
+            ls: dir
+          - os: macos
+            arch: 'arm64 universal2'
+
+    runs-on: ${{ format('{0}-latest', matrix.os) }}
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@v3
+
+    - name: Set up python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Get pip cache dir
+      id: pip-cache
+      run: |
+        echo "::set-output name=dir::$(pip cache dir)"
+
+    - name: Cache python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}
+
+    - name: install python dependencies
+      run: pip install -U setuptools wheel twine cibuildwheel platformdirs
+
+    - name: Display cibuildwheel cache dir
+      id: cibuildwheel-cache
+      run: |
+        from platformdirs import user_cache_path
+        print('::set-output name=dir::' + str(user_cache_path(appname='cibuildwheel', appauthor='pypa')))
+      shell: python
+
+    - name: Cache cibuildwheel tools
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.cibuildwheel-cache.outputs.dir }}
+        key: ${{ runner.os }}-cibuildwheel-${{ matrix.python-version }}
+
+    - if: matrix.os == 'macos' || matrix.os == 'windows'
+      name: Set up rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - if: matrix.os == 'macos' || matrix.os == 'windows'
+      name: Set up rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.arch }}
+
+    # Set up rust toolchain on mac os and windows (linux containers handled below)
+    - if: matrix.os == 'macos'
+      run: rustup target add aarch64-apple-darwin
+
+    - if: matrix.os == 'windows'
+      run: |
+        rustup toolchain install stable-i686-pc-windows-msvc
+        rustup target add i686-pc-windows-msvc
+
+    - name: build sdist
+      if: matrix.os == 'ubuntu' && matrix.python-version == 'cp311'
+      run: |
+        pip install maturin build
+        python -m build --sdist -o wheelhouse
+
+    - name: build ${{ matrix.platform || matrix.os }} binaries
+      run: cibuildwheel --output-dir wheelhouse
+      env:
+        CIBW_BUILD: '${{ matrix.python-version }}-*'
+        # rust doesn't seem to be available for musl linux on i686
+        CIBW_SKIP: '*-musllinux_i686'
+        # we build for matrix.arch (only exists on macos), else 'auto'
+        CIBW_ARCHS: ${{ matrix.arch || 'auto' }}
+        CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH" CARGO_TERM_COLOR="always"'
+        CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;$PATH"'
+        CIBW_BEFORE_BUILD: rustup show
+        # Linux wheels built in manylinux containers; set up rust toolchain here
+        CIBW_BEFORE_BUILD_LINUX: >
+          curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=stable --profile=minimal -y &&
+          rustup show
+        # CIBW_TEST_COMMAND: 'pytest {project}/test'
+        # CIBW_TEST_REQUIRES: pytest requests
+        # CIBW_TEST_SKIP: '*-macosx_arm64 *-macosx_universal2:arm64'
+        CIBW_BUILD_VERBOSITY: 1
+
+    - name: List and check wheels
+      run: |
+        ${{ matrix.ls || 'ls -lh' }} wheelhouse/
+        twine check wheelhouse/*
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v2
+      with:
+        name: wheels
+        path: ./wheelhouse/*.whl
