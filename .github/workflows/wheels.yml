@@ -130,8 +130,8 @@ jobs:
     if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags')) || (github.event_name == 'workflow_dispatch')
     needs: [build_wheels, build_sdist]
     environment:
-      name: pypi
-      url: https://pypi.org/p/nbstripout-fast
+      name: testpypi
+      url: https://test.pypi.org/p/nbstripout-fast
     permissions:
       id-token: write
     steps:
@@ -145,4 +145,5 @@ jobs:
       - name: Upload to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1.8
         with:
+          repository-url: https://test.pypi.org/legacy/
           packages_dir: wheels/
