@@ -196,7 +196,7 @@ fn main() -> Result<(), String> {
     let mut keep_output = false;
     let mut keep_count = false;
     let mut drop_empty_cells = false;
-    let strip_regex = args.widget_regex.unwrap_or("Output()".to_string());
+    let strip_regex = args.strip_regex.unwrap_or("Output()".to_string());
 
     let mut extra_keys: Vec<String> = vec![];
     for key in DEFAULT_EXTRA_KEYS {

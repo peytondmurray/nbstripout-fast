@@ -38,7 +38,7 @@ fn pop_recursive(d: &mut serde_json::Value, key: &str) {
 /// * `cell`: Contents of a cell
 /// * `default`: Whether to keep cell output or not by default
 /// * `strip_regex`: Regex to use to determine whether output should be stripped
-fn determine_keep_output(cell: &JSONMap, default: bool, strip_regex: &Regex) -> Result<Vec<bool>, String> {
+fn determine_keep_output(cell: &JSONMap, default: bool, strip_regex: Option<Regex>) -> Result<Vec<bool>, String> {
 
     // Generate a vector with the same length as cell["outputs"],
     // filled with the given value
@@ -74,35 +74,86 @@ fn determine_keep_output(cell: &JSONMap, default: bool, strip_regex: &Regex) -> 
         ));
     }
 
-    // If either the cell tags or the cell metadata indicate that the output should
-    // be kept, exit out and keep all the outputs
-    if has_keep_output_metadata || has_keep_output_tag {
-        return make_filled_output(true);
+    // // Iterate through the outputs for the cell, throwing away those that
+    // // have an output that matches the given regex.
+    // let regex_matches: Option<Vec<Option<bool>>> = cell
+    //     .get("outputs")
+    //     .and_then(|value| value.as_array())
+    //     .map(|outputs: &Vec<serde_json::Value> | {
+    //         outputs
+    //             .iter()
+    //             .map(|output| output_matches_regex(output, strip_regex.as_ref()))
+    //             .collect()
+    //     });
+    //
+    // // If either the cell tags or the cell metadata indicate that the output should
+    // // be kept, exit out and keep all the outputs unless they match the regex
+    // if has_keep_output_metadata || has_keep_output_tag {
+    //     match regex_matches {
+    //         Some(matches) => {
+    //             // If an array of cell outputs was found
+    //             Ok(matches.iter().map(|regex_match| regex_match.unwrap_or(false)).collect())
+    //         },
+    //         None => {
+    //             // There was either no "outputs" key, or the "outputs" value was not an array
+    //             make_filled_output(false)
+    //         }
+    //     }
+    // } else {
+    //     regex_matches.unwrap_or(make_filled_output(true))
+    // }
+
+    match strip_regex {
+        Some(reg) => {
+            // If a regex is provided, match the regex against the outputs.
+            cell
+                .get("outputs")
+                .and_then(|value| value.as_array())
+                .map(|outputs: &Vec<serde_json::Value>| {
+                    outputs
+                        .iter()
+                        .map(|output| output_matches_regex(output, &reg).unwrap_or(false))
+                        .collect()
+                })
+                .ok_or("Could not get cell outputs.".to_string())
+        },
+        None => {
+            if has_keep_output_metadata || has_keep_output_tag {
+                make_filled_output(true)
+            } else {
+                make_filled_output(false)
+            }
+        }
     }
+}
 
-    // Otherwise iterate through the outputs for the cell, throwing away those that
-    // have an output that matches the given regex.
-    cell.get("outputs")
-        .and_then(|value| value.as_array())
-        .map(|outputs| {
-            outputs.iter().map(|obj| {
-                // let is_execute_result = obj.get("output_type")
-                //     .and_then(|output_type| output_type.as_str()) == Some("execute_result");
-
-                let is_widget = obj.get("data")
-                    .and_then(|data| data.get("application/vnd.jupyter.widget-view+json")).is_some();
-
-                let matches_regex = obj.get("text/plain")
-                    .and_then(|text_obj| text_obj.as_array())
-                    .map(|arr| arr.iter().map(|line| line.as_str().unwrap_or("")).collect())
-                    .map(|text_arr: Vec<&str>| text_arr.join(""))
-                    .map(|text| strip_regex.is_match(&text))
-                    .unwrap_or(false);
-
-                !(is_widget && matches_regex) && default
-            }).collect()
-        })
-        .ok_or("Could not get cell outputs.".to_string())
+/// If a regex is specified, return true if it matches the output, and false otherwise.
+/// If a regex is not specified, return None.
+///
+/// * `output`: Output value to be matched against the regex
+/// * `strip_regex`: Regex to match the output against
+// fn output_matches_regex(output: &serde_json::Value, strip_regex: Option<&Regex>) -> Option<bool> {
+//     if strip_regex.is_none() {
+//         return None
+//     }
+//
+//     output
+//         .get("text")
+//         .or_else(|| output.get("text/plain"))
+//         .and_then(|text_obj| text_obj.as_array())
+//         .map(|arr| arr.iter().map(|line| line.as_str().unwrap_or("")).collect())
+//         .map(|text_arr: Vec<&str>| text_arr.join(""))
+//         .map(|text| strip_regex.expect("Strip regex expected.").is_match(&text))
+// }
+fn output_matches_regex(output: &serde_json::Value, strip_regex: &Regex) -> Result<bool, String> {
+    output
+        .get("text")
+        .or_else(|| output.get("text/plain"))
+        .and_then(|text_obj| text_obj.as_array())
+        .map(|arr| arr.iter().map(|line| line.as_str().unwrap_or("")).collect())
+        .map(|text_arr: Vec<&str>| text_arr.join(""))
+        .map(|text| strip_regex.is_match(&text))
+        .ok_or("Could not get contents of a cell output.".to_string())
 }
 
 // TODO: add custom errors instead of returning a string
@@ -124,7 +175,7 @@ pub fn strip_output(
     );
     let mut metadata_keys = Vec::<String>::new();
     let mut cell_keys = Vec::<String>::new();
-    let strip_regex_obj = match Regex::new(widget_regex) {
+    let strip_regex_obj = match Regex::new(strip_regex) {
         Ok(reg) => reg,
         Err(_err) => {
             return Err(format!("Unable to compile regex from the specified string: {}", strip_regex))
