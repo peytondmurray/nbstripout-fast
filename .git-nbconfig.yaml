@@ -1,0 +1,7 @@
+nbstripout_fast:
+  keep_count: false
+  keep_output: true
+  drop_empty_cells: true
+  extra_keys: []
+  keep_keys: []
+  strip_regex: "100%"
