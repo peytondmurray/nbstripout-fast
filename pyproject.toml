@@ -3,7 +3,7 @@ requires = ["maturin>=1.4"]
 build-backend = "maturin"
 
 [project]
-name = "nbstripout-fast"
+name = "nbso"
 description="Strips outputs from Jupyter notebooks"
 readme = "README.md"
 author="Marc Udoff"
