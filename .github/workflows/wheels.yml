@@ -132,7 +132,7 @@ jobs:
     needs: [build_wheels, build_sdist]
     environment:
       name: pypi
-      url: https://pypi.org/p/nbstripout-fast
+      url: https://test.pypi.org/p/nbstripout-fast
     permissions:
       id-token: write
     steps:
@@ -152,3 +152,4 @@ jobs:
         with:
           packages_dir: wheels/
           verbose: true
+          repository-url: https://test.pypi.org/legacy/
