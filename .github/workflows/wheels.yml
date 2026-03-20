@@ -100,7 +100,7 @@ jobs:
       env:
         CIBW_BUILD: 'cp*'
         # rust doesn't seem to be available for musl linux on i686
-        CIBW_SKIP: '*-musllinux_i686 cp38-* cp313-* cp314-*'
+        CIBW_SKIP: '*-musllinux_i686 cp38* cp313* cp314*'
         # we build for matrix.arch (only exists on macos), else 'auto'
         CIBW_ARCHS: 'auto'
         CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH" CARGO_TERM_COLOR="always"'
